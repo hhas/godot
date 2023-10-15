@@ -42,6 +42,19 @@
  * Hashing functions
  */
 
+
+// Wheeels: copied from 4.1.1 (used by key_mapping_ios.mm)
+static _FORCE_INLINE_ uint32_t hash_fmix32(uint32_t h) {
+	h ^= h >> 16;
+	h *= 0x85ebca6b;
+	h ^= h >> 13;
+	h *= 0xc2b2ae35;
+	h ^= h >> 16;
+
+	return h;
+}
+
+
 /**
  * DJB2 Hash function
  * @param C String
