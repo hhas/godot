@@ -240,6 +240,39 @@ void OSIPhone::pencil_drag(int p_idx, int p_prev_x, int p_prev_y, int p_x, int p
 	perform_event(ev);
 };
 
+
+// Wheeels: these mouse_moved and mouse_pressed methods are modified from osx code; called by the GameController-based mouse handling code in ViewController
+
+void OSIPhone::mouse_moved(int p_x, int p_y) {
+	Ref<InputEventMouseMotion> ev;
+	ev.instance();
+	// Wheeels only uses the mouse's current velocity so stub the other fields
+	ev->set_pressure(1.0); // 0...1
+	ev->set_position(Vector2());
+	ev->set_global_position(Vector2());
+	ev->set_relative(Vector2(p_x, p_y));
+	perform_event(ev);
+};
+
+void OSIPhone::mouse_pressed(int index, int mask, bool pressed) {
+	if (pressed) {
+		button_mask |= mask;
+	} else {
+		button_mask &= ~mask;
+	}
+	Ref<InputEventMouseButton> mb;
+	mb.instance();
+	mb->set_button_index(index);
+	mb->set_pressed(pressed);
+	mb->set_position(Vector2());
+	mb->set_global_position(Vector2());
+	mb->set_button_mask(button_mask);
+	perform_event(mb);
+}
+
+// end of Wheeels patches
+
+
 void OSIPhone::pencil_cancelled(int p_idx) {
 	pencil_press(p_idx, -1, -1, false, false);
 }
@@ -343,6 +376,9 @@ void OSIPhone::finalize() {
 	//	memdelete(rasterizer);
 }
 
+
+// Wheeels: it is not clear what each of these C++ API methods is supposed to do, but given the limitations in iOS's pointer support it does not look like it could support mouse modes other than VISIBLE/CAPTURED; therefore, we implement only what Wheeels requires to lock/unlock the pointer (which also hides/shows it) and read the mouse's velocity and pressed buttons while in-game (on the main and options screens, the mouse pointer emulates touch so can be used to click buttons)
+
 void OSIPhone::set_mouse_show(bool p_show) {
 	// Not supported for iOS
 }
@@ -356,14 +392,32 @@ bool OSIPhone::is_mouse_grab_enabled() const {
 	return true;
 }
 
+void OSIPhone::set_mouse_mode(MouseMode p_mode) {
+    if (@available(iOS 14.0, *)) {
+		//NSLog(@"OSIPhone::set_mouse_mode: %i -> %i", mouse_mode, p_mode);
+		if (p_mode == OS::MouseMode::MOUSE_MODE_VISIBLE) {
+			mouse_mode = OS::MouseMode::MOUSE_MODE_VISIBLE;
+			[AppDelegate.viewController setPointerLocked: NO];
+		} else {
+			mouse_mode = OS::MouseMode::MOUSE_MODE_CAPTURED;
+			[AppDelegate.viewController setPointerLocked: YES];
+		}
+	}
+}
+
+OS::MouseMode OSIPhone::get_mouse_mode() const {
+	return mouse_mode; // Wheeels only uses VISIBLE/CAPTURED modes
+}
+
 Point2 OSIPhone::get_mouse_position() const {
 	// Not supported for iOS
+	// Wheeels: mouse_moved creates its own mouse input events containing relative velocity only
 	return Point2();
 }
 
 int OSIPhone::get_mouse_button_state() const {
-	// Not supported for iOS
-	return 0;
+	// Wheeels: at least this works fairly normally
+	return button_mask;
 }
 
 void OSIPhone::set_window_title(const String &p_title) {
@@ -454,6 +508,8 @@ bool OSIPhone::has_virtual_keyboard() const {
 };
 
 void OSIPhone::show_virtual_keyboard(const String &p_existing_text, const Rect2 &p_screen_rect, bool p_multiline, int p_max_input_length, int p_cursor_start, int p_cursor_end) {
+	// Wheeels: we don't want this messing with our own (fragile) KeyWatcher
+	/*
 	NSString *existingString = [[NSString alloc] initWithUTF8String:p_existing_text.utf8().get_data()];
 
 	[AppDelegate.viewController.keyboardView
@@ -461,10 +517,11 @@ void OSIPhone::show_virtual_keyboard(const String &p_existing_text, const Rect2 
 								 multiline:p_multiline
 							   cursorStart:p_cursor_start
 								 cursorEnd:p_cursor_end];
+	*/
 };
 
 void OSIPhone::hide_virtual_keyboard() {
-	[AppDelegate.viewController.keyboardView resignFirstResponder];
+	//[AppDelegate.viewController.keyboardView resignFirstResponder];
 }
 
 void OSIPhone::set_virtual_keyboard_height(int p_height) {
@@ -735,6 +792,10 @@ OSIPhone::OSIPhone(String p_data_dir, String p_cache_dir) {
 	_set_logger(memnew(CompositeLogger(loggers)));
 
 	AudioDriverManager::add_driver(&audio_driver);
+
+	// Wheeels: when a mouse-like device is connected, the mouse pointer is usable on main screen
+	mouse_mode = OS::MouseMode::MOUSE_MODE_VISIBLE;
+
 };
 
 OSIPhone::~OSIPhone() {

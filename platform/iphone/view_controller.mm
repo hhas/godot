@@ -37,11 +37,17 @@
 #import "native_video_view.h"
 #include "os_iphone.h"
 
-@interface ViewController () <GodotViewDelegate>
+@interface ViewController () <GodotViewDelegate> {
+
+    KeyWatcher *watcher;
+
+    BOOL isPointerLocked;
+
+}
 
 @property(strong, nonatomic) GodotViewRenderer *renderer;
 @property(strong, nonatomic) GodotNativeVideoView *videoView;
-@property(strong, nonatomic) GodotKeyboardInputView *keyboardView;
+//@property(strong, nonatomic) GodotKeyboardInputView *keyboardView;
 
 @property(strong, nonatomic) UIView *godotLoadingOverlay;
 
@@ -86,9 +92,15 @@
 	return self;
 }
 
+
+// Wheeels patches
+
 - (void)godot_commonInit {
 	// Initialize view controller values.
+	isPointerLocked = NO;
 }
+
+
 
 - (void)didReceiveMemoryWarning {
 	[super didReceiveMemoryWarning];
@@ -98,7 +110,25 @@
 - (void)viewDidLoad {
 	[super viewDidLoad];
 
-	[self observeKeyboard];
+	// Wheeels: disable the on-screen keyboard and pass all physical key presses to KeyWatcher
+
+    if (@available(iOS 14.0, *)) {
+
+		// Wheeels: create a KeyWatcher instance which will receive all physical key presses once it becomes first responder
+		watcher = [[KeyWatcher alloc] initWithFrame: CGRectMake(0, 0, 0, 0)];
+		[self.view addSubview: watcher];
+		watcher.text = @"xx";
+		watcher.delegate = watcher;
+
+		// Wheeels: hide the on-screen keyboard bar (this doesn't 100% prevent iOS popping up on-screen keyboard controls, e.g. if user presses Cmd-Shift-Spacebar, but reduces the chances of it happening)
+		watcher.autocorrectionType = UITextAutocorrectionTypeNo;
+		watcher.inputAssistantItem.leadingBarButtonGroups = @[];
+		watcher.inputAssistantItem.trailingBarButtonGroups = @[];
+
+		// if no keyboard is connected, the default on-screen keyboard (inputView=nil) would normally appear when the watcher becomes the first responder; to prevent this - and to ensure key presses are handled by the watcher if/when a keyboard does connect - set the watcher's inputView (on-screen keyboard) to itself
+		watcher.inputView = watcher;
+	}
+
 	[self displayLoadingOverlay];
 
 	if (@available(iOS 11.0, *)) {
@@ -106,7 +136,104 @@
 	}
 }
 
+// Wheeels: add/remove key watcher to/from responder chain
+
+- (void)viewDidAppear:(BOOL)animated {
+    [super viewDidAppear: animated];
+    if (@available(iOS 14.0, *)) {
+
+		// Wheeels: always add watcher to the responder chain as GCKeyboardDidConnectNotification doesn't seem to fire when a Bluetooth keyboard wakes (i.e. don't rely on Notifications to set/unset watcher as first responder)
+	    [watcher becomeFirstResponder];
+
+		// Wheeels: we use GameController APIs to process mouse movements and button clicks
+        for (GCMouse *mouse in GCMouse.mice) {
+            [self registerMouseCallbacks: mouse];
+        }
+
+        [NSNotificationCenter.defaultCenter addObserverForName: GCMouseDidConnectNotification
+                                                	    object: nil
+                                                         queue: nil
+                                                    usingBlock: ^(NSNotification *notification) {
+                                                 					[self registerMouseCallbacks: notification.object];
+                                              				    }];
+        [NSNotificationCenter.defaultCenter addObserverForName: GCMouseDidDisconnectNotification
+                                                	    object: nil
+                                                         queue: nil
+                                                    usingBlock: ^(NSNotification *notification) {
+                                                 					[self unregisterMouseCallbacks: notification.object];
+                                              				    }];
+        // Wheeels: if user presses Home to suspend app then taps app icon to resume it, the watcher requires an explicit poke or it will not resume handling key presses
+        [NSNotificationCenter.defaultCenter addObserverForName: UIApplicationDidBecomeActiveNotification
+                                                	    object: nil
+                                                         queue: nil
+                                                    usingBlock: ^(NSNotification *notification) {
+                                                    				[watcher resignFirstResponder];
+                                                 					[watcher becomeFirstResponder];
+                                              				    }];
+    }
+}
+
+- (void)viewDidDisappear:(BOOL)animated { // redundant as we never unload the view
+    [super viewDidDisappear: animated];
+
+    if (@available(iOS 14.0, *)) {
+		[watcher resignFirstResponder];
+
+        [NSNotificationCenter.defaultCenter removeObserver: self name: GCMouseDidConnectNotification object: self];
+        [NSNotificationCenter.defaultCenter removeObserver: self name: GCMouseDidDisconnectNotification object: self];
+        [NSNotificationCenter.defaultCenter removeObserver: self name: UIApplicationDidBecomeActiveNotification object: self];
+    }
+}
+
+// note: this will detect all connected mice; unlike keyboard they are non consolidated into a single device
+
+// TO DO: if Assistive Touch is enabled, it interferes with leftButton detection; this smells of iOS bug
+
+- (void)registerMouseCallbacks: (GCMouse *)mouse API_AVAILABLE(ios(14.0)) {
+    //NSLog(@"registerMouseCallbacks %@", mouse);
+    mouse.mouseInput.mouseMovedHandler = ^(GCMouseInput * _Nonnull mouse, float deltaX, float deltaY) {
+		OSIPhone::get_singleton()->mouse_moved(deltaX, deltaY);
+    };
+    mouse.mouseInput.leftButton.pressedChangedHandler = ^(GCControllerButtonInput * _Nonnull button, float value, BOOL pressed) {
+        OSIPhone::get_singleton()->mouse_pressed(BUTTON_LEFT, BUTTON_MASK_LEFT, pressed);
+    };
+    mouse.mouseInput.rightButton.pressedChangedHandler = ^(GCControllerButtonInput * _Nonnull button, float value, BOOL pressed) {
+        OSIPhone::get_singleton()->mouse_pressed(BUTTON_RIGHT, BUTTON_MASK_RIGHT, pressed);
+    };
+}
+
+- (void)unregisterMouseCallbacks: (GCMouse*)mouse API_AVAILABLE(ios(14.0)) {
+	//NSLog(@"unregisterMouseCallbacks %@", mouse);
+    mouse.mouseInput.mouseMovedHandler = nil;
+    mouse.mouseInput.leftButton.pressedChangedHandler = nil;
+    mouse.mouseInput.rightButton.pressedChangedHandler = nil;
+}
+
+
+// Wheeels: hide and lock [mouse/trackball] pointer so we can measure its speed of movement
+
+// TO DO: when AssistiveTouch is enabled, changing prefersPointerLocked from YES to NO doesn't seem to work: pointerLockState.locked remains YES and the pointer stays locked; smells like iOS bug
+
+- (void)setPointerLocked: (BOOL)isLocked {
+    if (@available(iOS 14.0, *)) {
+		isPointerLocked = isLocked;
+		[self setNeedsUpdateOfPrefersPointerLocked];
+		((GodotView *)self.view).mouseButtonSendsTouchEvents = !isLocked; // ick; it might be cleaner if touchesBegan:withEvent: &co were moved from GodotView to ViewController, though all this code is a mass of hacks anyway
+		//NSLog(@"setPointerLocked: %i -> %i   %@", self.view.window.windowScene.pointerLockState.locked, isPointerLocked, self.view.window.windowScene.pointerLockState);
+	}
+}
+
+- (BOOL)prefersPointerLocked {
+	//NSLog(@"prefersPointerLocked = %i", isPointerLocked);
+    return isPointerLocked;
+}
+
+// end of Wheeels patches
+
+
 - (void)observeKeyboard {
+	// Wheeels: Godot 3.5 implements GodotKeyboardInputView which looks like it calls OSIPhone::key(), suggesting it monitors key presses; however, it doesn't detect Arrow key presses so disable it as we have enough fragile kludges to contend with as it is
+	/*
 	printf("******** setting up keyboard input view\n");
 	self.keyboardView = [GodotKeyboardInputView new];
 	[self.view addSubview:self.keyboardView];
@@ -122,6 +249,7 @@
 			   selector:@selector(keyboardHidden:)
 				   name:UIKeyboardDidHideNotification
 				 object:nil];
+	*/
 }
 
 - (void)displayLoadingOverlay {
@@ -153,7 +281,7 @@
 	[self.videoView stopVideo];
 	self.videoView = nil;
 
-	self.keyboardView = nil;
+	//self.keyboardView = nil;
 
 	self.renderer = nil;
 

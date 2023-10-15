@@ -1,5 +1,5 @@
 /**************************************************************************/
-/*  godot_view_gesture_recognizer.h                                       */
+/*  key_mapping_ios.h                                                     */
 /**************************************************************************/
 /*                         This file is part of:                          */
 /*                             GODOT ENGINE                               */
@@ -28,29 +28,24 @@
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                 */
 /**************************************************************************/
 
-// GodotViewGestureRecognizer allows iOS gestures to work correctly by
-// emulating UIScrollView's UIScrollViewDelayedTouchesBeganGestureRecognizer.
-// It catches all gestures incoming to UIView and delays them for 150ms
-// (the same value used by UIScrollViewDelayedTouchesBeganGestureRecognizer)
-// If touch cancellation or end message is fired it fires delayed
-// begin touch immediately as well as last touch signal
+// Wheeels: copied from 4.1.1 so we can use its new -pressesBegan:withEvent: implementation
+
+#ifndef KEY_MAPPING_IOS_H
+#define KEY_MAPPING_IOS_H
+
+#include "core/os/keyboard.h"
 
 #import <UIKit/UIKit.h>
 
-@interface GodotViewGestureRecognizer : UIGestureRecognizer {
-@private
+// in 4.1.1, Key is `enum class Key {...}`; in 3.5, Key is C enum with KEY_ prefix
+#define Key int
 
-	// Timer used to delay begin touch message.
-	// Should work as simple emulation of UIDelayedAction
-	NSTimer *delayTimer;
+class KeyMappingIOS {
+	KeyMappingIOS() {}
 
-	// Delayed touch parameters
-	NSSet *delayedTouches;
-	UIEvent *delayedEvent;
-}
+public:
+	static void initialize();
+	static Key remap_key(CFIndex p_keycode);
+};
 
-@property(nonatomic, readonly, assign) NSTimeInterval delayTimeInterval;
-
-- (instancetype)init;
-
-@end
+#endif // KEY_MAPPING_IOS_H

@@ -28,6 +28,10 @@
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                 */
 /**************************************************************************/
 
+
+// Wheeels: added mouse_moved, mouse_pressed methods
+
+
 #ifndef OS_IPHONE_H
 #define OS_IPHONE_H
 
@@ -93,6 +97,11 @@ private:
 
 	bool is_focused = false;
 
+	// Wheeels:
+	MouseMode mouse_mode;
+	int button_mask = 0;
+
+
 public:
 	static OSIPhone *get_singleton();
 
@@ -132,6 +141,12 @@ public:
 	virtual int get_screen_dpi(int p_screen = -1) const;
 	virtual float get_screen_refresh_rate(int p_screen = -1) const;
 
+	// Wheeels:
+	void set_mouse_mode(MouseMode p_mode);
+	MouseMode get_mouse_mode() const;
+	void mouse_moved(int p_x, int p_y);
+	void mouse_pressed(int index, int mask, bool pressed);
+
 	void pencil_press(int p_idx, int p_x, int p_y, bool p_pressed, bool p_doubleclick);
 	void touch_press(int p_idx, int p_x, int p_y, bool p_pressed, bool p_doubleclick);
 	void pencil_drag(int p_idx, int p_prev_x, int p_prev_y, int p_x, int p_y, float p_force);
@@ -158,6 +173,8 @@ public:
 	virtual bool is_mouse_grab_enabled() const;
 	virtual Point2 get_mouse_position() const;
 	virtual int get_mouse_button_state() const;
+	//virtual OS::MouseMode get_mouse_mode() const;
+
 
 	virtual void set_window_title(const String &p_title);
 

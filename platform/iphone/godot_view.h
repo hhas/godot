@@ -54,6 +54,8 @@ class String;
 
 @property(assign, readonly, nonatomic) BOOL isActive;
 
+@property(assign, nonatomic) BOOL mouseButtonSendsTouchEvents;
+
 @property(strong, readonly, nonatomic) CALayer<DisplayLayer> *renderingLayer;
 @property(assign, readonly, nonatomic) BOOL canRender;
 
@@ -64,10 +66,5 @@ class String;
 - (void)startRendering;
 
 @property(nonatomic, assign) BOOL useCADisplayLink;
-
-- (void)godotTouchesBegan:(NSSet *)touches withEvent:(UIEvent *)event;
-- (void)godotTouchesMoved:(NSSet *)touches withEvent:(UIEvent *)event;
-- (void)godotTouchesEnded:(NSSet *)touches withEvent:(UIEvent *)event;
-- (void)godotTouchesCancelled:(NSSet *)touches withEvent:(UIEvent *)event;
 
 @end

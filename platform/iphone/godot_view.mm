@@ -38,10 +38,21 @@
 #import <QuartzCore/QuartzCore.h>
 
 #import "display_layer.h"
-#import "godot_view_gesture_recognizer.h"
 #import "godot_view_renderer.h"
 
 #import <CoreMotion/CoreMotion.h>
+
+// Wheeels: removed godot_view_gesture_recognizer; touch events are now handled directly using 4.1.1 code
+#import "key_mapping_ios.h" // from 4.1.1
+
+
+Key fix_keycode(char32_t p_char, Key p_key) { // Wheeels: code from 4.1.1, core/os/keyboard.cpp
+	if (p_char >= 0x20 && p_char <= 0x7E) {
+		return (Key)String::char_uppercase(p_char);
+	}
+	return p_key;
+}
+
 
 static const int max_touches = 32;
 
@@ -61,8 +72,6 @@ static const int max_touches = 32;
 @property(strong, nonatomic) CALayer<DisplayLayer> *renderingLayer;
 
 @property(strong, nonatomic) CMMotionManager *motionManager;
-
-@property(strong, nonatomic) GodotViewGestureRecognizer *delayGestureRecognizer;
 
 @end
 
@@ -134,14 +143,12 @@ static const int max_touches = 32;
 		[self.animationTimer invalidate];
 		self.animationTimer = nil;
 	}
-
-	if (self.delayGestureRecognizer) {
-		self.delayGestureRecognizer = nil;
-	}
 }
 
 - (void)godot_commonInit {
 	self.contentScaleFactor = [UIScreen mainScreen].nativeScale;
+
+	KeyMappingIOS::initialize(); // Wheeels: from 4.1.1
 
 	[self initTouches];
 
@@ -158,10 +165,11 @@ static const int max_touches = 32;
 		}
 	}
 
-	// Initialize delay gesture recognizer
-	GodotViewGestureRecognizer *gestureRecognizer = [[GodotViewGestureRecognizer alloc] init];
-	self.delayGestureRecognizer = gestureRecognizer;
-	[self addGestureRecognizer:self.delayGestureRecognizer];
+	// Wheeels: the mouse pointer is able to press touch buttons (touch events) on main and options screens; in-game, the pointer is hidden and locked in position so that only GCMouseInput reads mouse button presses
+	// problem: despite the mouse pointer being hidden, mouse clicks are still sent to touch buttons at its current location; if the user mouse-clicks near top of GO then the pointer is locked in that position and can press the down arrow button during gameplay, causing player to reverse unexpectedly every time they throw/push
+	// workaround: distinguish between indirect (mouse) vs direct touch (Info.plist must contain a UIApplicationSupportsIndirectInputEvents=true key, otherwise mouse clicks are reported as direct) and suppress UITouches from mouse button clicks when in-game
+	// see also -[ViewController setPointerLocked:], which toggles the following flag:
+	self.mouseButtonSendsTouchEvents = YES;
 }
 
 - (void)startRendering {
@@ -286,16 +294,18 @@ static const int max_touches = 32;
 
 // MARK: Touches
 
+// Wheeels: this is copied from 4.1.1 and modified to use 3.5.2's OSIPhone API
+
 - (void)initTouches {
 	for (int i = 0; i < max_touches; i++) {
-		godot_touches[i] = NULL;
+		godot_touches[i] = nullptr;
 	}
 }
 
 - (int)getTouchIDForTouch:(UITouch *)p_touch {
 	int first = -1;
 	for (int i = 0; i < max_touches; i++) {
-		if (first == -1 && godot_touches[i] == NULL) {
+		if (first == -1 && godot_touches[i] == nullptr) {
 			first = i;
 			continue;
 		}
@@ -315,11 +325,11 @@ static const int max_touches = 32;
 - (int)removeTouch:(UITouch *)p_touch {
 	int remaining = 0;
 	for (int i = 0; i < max_touches; i++) {
-		if (godot_touches[i] == NULL) {
+		if (godot_touches[i] == nullptr) {
 			continue;
 		}
 		if (godot_touches[i] == p_touch) {
-			godot_touches[i] = NULL;
+			godot_touches[i] = nullptr;
 		} else {
 			++remaining;
 		}
@@ -329,79 +339,52 @@ static const int max_touches = 32;
 
 - (void)clearTouches {
 	for (int i = 0; i < max_touches; i++) {
-		godot_touches[i] = NULL;
+		godot_touches[i] = nullptr;
 	}
 }
 
-- (void)godotTouchesBegan:(NSSet *)touchesSet withEvent:(UIEvent *)event {
-	NSArray *tlist = [event.allTouches allObjects];
-	for (unsigned int i = 0; i < [tlist count]; i++) {
-		if ([touchesSet containsObject:[tlist objectAtIndex:i]]) {
-			UITouch *touch = [tlist objectAtIndex:i];
+- (void)touchesBegan:(NSSet *)touches withEvent:(UIEvent *)event {
+	//[super touchesBegan: touches withEvent: event];
+	for (UITouch *touch in touches) {
+		if (touch.type == UITouchTypeDirect || self.mouseButtonSendsTouchEvents) { // Wheeels: ignore indirect (mouse pointer) touches as those are handled by GCMouse in-game (this requires UIApplicationSupportsIndirectInputEvents added to Info.plist, otherwise mouse button is not distinguished from direct touch)
 			int tid = [self getTouchIDForTouch:touch];
 			ERR_FAIL_COND(tid == -1);
 			CGPoint touchPoint = [touch locationInView:self];
-
-			if (touch.type == UITouchTypeStylus) {
-				OSIPhone::get_singleton()->pencil_press(tid, touchPoint.x * self.contentScaleFactor, touchPoint.y * self.contentScaleFactor, true, touch.tapCount > 1);
-			} else {
-				OSIPhone::get_singleton()->touch_press(tid, touchPoint.x * self.contentScaleFactor, touchPoint.y * self.contentScaleFactor, true, touch.tapCount > 1);
-			}
+			OSIPhone::get_singleton()->touch_press(tid, touchPoint.x * self.contentScaleFactor, touchPoint.y * self.contentScaleFactor, true, touch.tapCount > 1);
 		}
 	}
 }
 
-- (void)godotTouchesMoved:(NSSet *)touches withEvent:(UIEvent *)event {
-	NSArray *tlist = [event.allTouches allObjects];
-	for (unsigned int i = 0; i < [tlist count]; i++) {
-		if ([touches containsObject:[tlist objectAtIndex:i]]) {
-			UITouch *touch = [tlist objectAtIndex:i];
+- (void)touchesMoved:(NSSet *)touches withEvent:(UIEvent *)event {
+	for (UITouch *touch in touches) {
+		if (touch.type == UITouchTypeDirect || self.mouseButtonSendsTouchEvents) {
 			int tid = [self getTouchIDForTouch:touch];
 			ERR_FAIL_COND(tid == -1);
 			CGPoint touchPoint = [touch locationInView:self];
 			CGPoint prev_point = [touch previousLocationInView:self];
-			CGFloat force = touch.force;
-			// Vector2 tilt = touch.azimuthUnitVector;
-
-			if (touch.type == UITouchTypeStylus) {
-				OSIPhone::get_singleton()->pencil_drag(tid, prev_point.x * self.contentScaleFactor, prev_point.y * self.contentScaleFactor, touchPoint.x * self.contentScaleFactor, touchPoint.y * self.contentScaleFactor, force);
-			} else {
-				OSIPhone::get_singleton()->touch_drag(tid, prev_point.x * self.contentScaleFactor, prev_point.y * self.contentScaleFactor, touchPoint.x * self.contentScaleFactor, touchPoint.y * self.contentScaleFactor);
-			}
+			OSIPhone::get_singleton()->touch_drag(tid, prev_point.x * self.contentScaleFactor, prev_point.y * self.contentScaleFactor, touchPoint.x * self.contentScaleFactor, touchPoint.y * self.contentScaleFactor);
 		}
 	}
 }
 
-- (void)godotTouchesEnded:(NSSet *)touches withEvent:(UIEvent *)event {
-	NSArray *tlist = [event.allTouches allObjects];
-	for (unsigned int i = 0; i < [tlist count]; i++) {
-		if ([touches containsObject:[tlist objectAtIndex:i]]) {
-			UITouch *touch = [tlist objectAtIndex:i];
+- (void)touchesEnded:(NSSet *)touches withEvent:(UIEvent *)event {
+	for (UITouch *touch in touches) {
+		if (touch.type == UITouchTypeDirect || self.mouseButtonSendsTouchEvents) {
 			int tid = [self getTouchIDForTouch:touch];
 			ERR_FAIL_COND(tid == -1);
 			[self removeTouch:touch];
 			CGPoint touchPoint = [touch locationInView:self];
-			if (touch.type == UITouchTypeStylus) {
-				OSIPhone::get_singleton()->pencil_press(tid, touchPoint.x * self.contentScaleFactor, touchPoint.y * self.contentScaleFactor, false, false);
-			} else {
-				OSIPhone::get_singleton()->touch_press(tid, touchPoint.x * self.contentScaleFactor, touchPoint.y * self.contentScaleFactor, false, false);
-			}
+			OSIPhone::get_singleton()->touch_press(tid, touchPoint.x * self.contentScaleFactor, touchPoint.y * self.contentScaleFactor, false, false);
 		}
 	}
 }
 
-- (void)godotTouchesCancelled:(NSSet *)touches withEvent:(UIEvent *)event {
-	NSArray *tlist = [event.allTouches allObjects];
-	for (unsigned int i = 0; i < [tlist count]; i++) {
-		if ([touches containsObject:[tlist objectAtIndex:i]]) {
-			UITouch *touch = [tlist objectAtIndex:i];
+- (void)touchesCancelled:(NSSet *)touches withEvent:(UIEvent *)event {
+	for (UITouch *touch in touches) {
+		if (touch.type == UITouchTypeDirect || self.mouseButtonSendsTouchEvents) {
 			int tid = [self getTouchIDForTouch:touch];
 			ERR_FAIL_COND(tid == -1);
-			if (touch.type == UITouchTypeStylus) {
-				OSIPhone::get_singleton()->pencil_cancelled(tid);
-			} else {
-				OSIPhone::get_singleton()->touches_cancelled(tid);
-			}
+			OSIPhone::get_singleton()->touches_cancelled(tid);
 		}
 	}
 	[self clearTouches];
@@ -479,5 +462,62 @@ static const int max_touches = 32;
 		} break;
 	}
 }
+
+
+
+// Wheeels: copied from 4.1.1; these will pick up keyboard key presses if KeyWatcher is not in responder chain
+- (void)pressesBegan:(NSSet<UIPress *> *)presses withEvent:(UIPressesEvent *)event {
+	if (@available(iOS 14.0, *)) {
+
+		for (UIPress *press in presses) {
+
+			String u32lbl = String::utf8([press.key.charactersIgnoringModifiers UTF8String]);
+			String u32text = String::utf8([press.key.characters UTF8String]);
+
+			Key key = KeyMappingIOS::remap_key(press.key.keyCode);
+
+			if (press.key.keyCode == 0 && u32text.empty() && u32lbl.empty()) {
+				continue;
+			}
+
+			char32_t us = 0;
+			if (!u32lbl.empty() && !u32lbl.begins_with("UIKey")) { // special keys, e.g. Arrows, use "UIKey..." names
+				us = u32lbl[0];
+			}
+
+			if (!u32text.empty() && !u32text.begins_with("UIKey")) {
+				for (int i = 0; i < u32text.length(); i++) {
+					OSIPhone::get_singleton()->key(fix_keycode(us, key), true);
+				}
+
+			} else {
+				OSIPhone::get_singleton()->key(fix_keycode(us, key), true);
+			}
+		}
+	}
+}
+
+- (void)pressesEnded:(NSSet<UIPress *> *)presses withEvent:(UIPressesEvent *)event {
+	if (@available(iOS 14.0, *)) {
+
+		for (UIPress *press in presses) {
+			String u32lbl = String::utf8([press.key.charactersIgnoringModifiers UTF8String]);
+			Key key = KeyMappingIOS::remap_key(press.key.keyCode);
+
+			if (press.key.keyCode == 0 && u32lbl.empty()) {
+				continue;
+			}
+
+			char32_t us = 0;
+			if (!u32lbl.empty() && !u32lbl.begins_with("UIKey")) {
+				us = u32lbl[0];
+			}
+
+			OSIPhone::get_singleton()->key(fix_keycode(us, key), false);
+		}
+	}
+}
+
+
 
 @end
