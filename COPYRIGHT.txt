@@ -1,3 +1,13 @@
+2023: Modified Godot Engine 3.5.3 with additional iOS keyboard and trackball 
+support for use in RJ Cooper & Associates, Inc’s Wheeels! (rjcooper.com)
+
+See 'wheeels' branch for modifications to files in godot/platform/iphone. 
+Those Wheeels!-specific modifications are released into the public domain.
+
+All other code is licensed under existing Godot Engine terms below.
+
+
+
 # Exhaustive licensing information for files in the Godot Engine repository
 # =========================================================================
 #

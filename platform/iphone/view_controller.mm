@@ -141,10 +141,6 @@
 - (void)viewDidAppear:(BOOL)animated {
     [super viewDidAppear: animated];
     if (@available(iOS 14.0, *)) {
-
-		// Wheeels: always add watcher to the responder chain as GCKeyboardDidConnectNotification doesn't seem to fire when a Bluetooth keyboard wakes (i.e. don't rely on Notifications to set/unset watcher as first responder)
-	    [watcher becomeFirstResponder];
-
 		// Wheeels: we use GameController APIs to process mouse movements and button clicks
         for (GCMouse *mouse in GCMouse.mice) {
             [self registerMouseCallbacks: mouse];
@@ -215,6 +211,15 @@
 // TO DO: when AssistiveTouch is enabled, changing prefersPointerLocked from YES to NO doesn't seem to work: pointerLockState.locked remains YES and the pointer stays locked; smells like iOS bug
 
 - (void)setPointerLocked: (BOOL)isLocked {
+	if (isLocked) {
+		watcher.inputView = watcher;
+		// Wheeels: always add watcher to the responder chain as GCKeyboardDidConnectNotification doesn't seem to fire when a Bluetooth keyboard wakes (i.e. don't rely on Notifications to set/unset watcher as first responder)
+        [watcher resignFirstResponder];
+	    [watcher becomeFirstResponder];
+	} else {
+		[watcher resignFirstResponder];
+		watcher.inputView = nil;
+	}
     if (@available(iOS 14.0, *)) {
 		isPointerLocked = isLocked;
 		[self setNeedsUpdateOfPrefersPointerLocked];

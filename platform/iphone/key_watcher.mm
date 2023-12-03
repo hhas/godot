@@ -7,7 +7,7 @@
 #import "key_mapping_ios.h" // Wheeels: copied from 4.1.1
 
 
-Key fix_keycode(char32_t p_char, Key p_key) { // Wheeels: copied from 4.1.1, core/os/keyboard.cpp
+Key fix_keycode_2(char32_t p_char, Key p_key) { // Wheeels: copied from 4.1.1, core/os/keyboard.cpp
 	if (p_char >= 0x20 && p_char <= 0x7E) {
 		return (Key)String::char_uppercase(p_char);
 	}
@@ -84,11 +84,11 @@ Key fix_keycode(char32_t p_char, Key p_key) { // Wheeels: copied from 4.1.1, cor
 
 			if (!u32text.empty() && !u32text.begins_with("UIKey")) {
 				for (int i = 0; i < u32text.length(); i++) {
-					OSIPhone::get_singleton()->key(fix_keycode(us, key), true);
+					OSIPhone::get_singleton()->key(fix_keycode_2(us, key), true);
 				}
 
 			} else {
-				OSIPhone::get_singleton()->key(fix_keycode(us, key), true);
+				OSIPhone::get_singleton()->key(fix_keycode_2(us, key), true);
 			}
 		}
 	}
@@ -110,7 +110,7 @@ Key fix_keycode(char32_t p_char, Key p_key) { // Wheeels: copied from 4.1.1, cor
 				us = u32lbl[0];
 			}
 
-			OSIPhone::get_singleton()->key(fix_keycode(us, key), false);
+			OSIPhone::get_singleton()->key(fix_keycode_2(us, key), false);
 		}
 	}
 }
