@@ -47,7 +47,7 @@
 
 @property(strong, nonatomic) GodotViewRenderer *renderer;
 @property(strong, nonatomic) GodotNativeVideoView *videoView;
-//@property(strong, nonatomic) GodotKeyboardInputView *keyboardView;
+@property(strong, nonatomic) GodotKeyboardInputView *keyboardView;
 
 @property(strong, nonatomic) UIView *godotLoadingOverlay;
 
@@ -141,6 +141,10 @@
 - (void)viewDidAppear:(BOOL)animated {
     [super viewDidAppear: animated];
     if (@available(iOS 14.0, *)) {
+
+		// Wheeels: always add watcher to the responder chain as GCKeyboardDidConnectNotification doesn't seem to fire when a Bluetooth keyboard wakes (i.e. don't rely on Notifications to set/unset watcher as first responder)
+	    [watcher becomeFirstResponder];
+
 		// Wheeels: we use GameController APIs to process mouse movements and button clicks
         for (GCMouse *mouse in GCMouse.mice) {
             [self registerMouseCallbacks: mouse];
@@ -211,15 +215,6 @@
 // TO DO: when AssistiveTouch is enabled, changing prefersPointerLocked from YES to NO doesn't seem to work: pointerLockState.locked remains YES and the pointer stays locked; smells like iOS bug
 
 - (void)setPointerLocked: (BOOL)isLocked {
-	if (isLocked) {
-		watcher.inputView = watcher;
-		// Wheeels: always add watcher to the responder chain as GCKeyboardDidConnectNotification doesn't seem to fire when a Bluetooth keyboard wakes (i.e. don't rely on Notifications to set/unset watcher as first responder)
-        [watcher resignFirstResponder];
-	    [watcher becomeFirstResponder];
-	} else {
-		[watcher resignFirstResponder];
-		watcher.inputView = nil;
-	}
     if (@available(iOS 14.0, *)) {
 		isPointerLocked = isLocked;
 		[self setNeedsUpdateOfPrefersPointerLocked];
@@ -237,13 +232,13 @@
 
 
 - (void)observeKeyboard {
-	// Wheeels: Godot 3.5 implements GodotKeyboardInputView which looks like it calls OSIPhone::key(), suggesting it monitors key presses; however, it doesn't detect Arrow key presses so disable it as we have enough fragile kludges to contend with as it is
-	/*
+	// Wheeels: Godot 3.5 implements GodotKeyboardInputView which looks like it calls OSIPhone::key(), suggesting it monitors key presses and passes them on to LineEdit/TextEdit controls
+/*
 	printf("******** setting up keyboard input view\n");
 	self.keyboardView = [GodotKeyboardInputView new];
 	[self.view addSubview:self.keyboardView];
 
-	printf("******** adding observer for keyboard show/hide\n");
+	//printf("******** adding observer for keyboard show/hide\n");
 	[[NSNotificationCenter defaultCenter]
 			addObserver:self
 			   selector:@selector(keyboardOnScreen:)
@@ -254,8 +249,36 @@
 			   selector:@selector(keyboardHidden:)
 				   name:UIKeyboardDidHideNotification
 				 object:nil];
-	*/
+
+	[self.keyboardView
+			becomeFirstResponderWithString: @""
+								 multiline:NO
+							   cursorStart:0
+								 cursorEnd:0];
+*/
 }
+
+- (void)unobserveKeyboard {
+/*
+	if (self.keyboardView) {
+		[self.keyboardView resignFirstResponder];
+		[self.view endEditing: YES];
+
+		[[NSNotificationCenter defaultCenter]
+				removeObserver:self
+					      name:UIKeyboardDidShowNotification
+					    object:nil];
+		[[NSNotificationCenter defaultCenter]
+				removeObserver:self
+					      name:UIKeyboardDidHideNotification
+					  object:nil];
+
+		[self.keyboardView removeFromSuperview];
+		self.keyboardView = nil;
+	}
+*/
+}
+
 
 - (void)displayLoadingOverlay {
 	NSBundle *bundle = [NSBundle mainBundle];
@@ -355,6 +378,20 @@
 }
 
 // MARK: Keyboard
+
+- (void)setVirtualKeyboardEnabled:(BOOL)isEnabled {
+	//printf("RESIGN RESPONDER\n");
+    [watcher resignFirstResponder];
+	if (isEnabled) {
+		watcher.inputView = nil;
+	} else {
+		//printf("BECOME RESPONDER\n");
+		watcher.inputView = watcher;
+	    [watcher becomeFirstResponder];
+	}
+}
+
+
 
 - (void)keyboardOnScreen:(NSNotification *)notification {
 	NSDictionary *info = notification.userInfo;

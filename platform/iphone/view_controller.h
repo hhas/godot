@@ -51,6 +51,13 @@
 - (BOOL)playVideoAtPath:(NSString *)filePath volume:(float)videoVolume audio:(NSString *)audioTrack subtitle:(NSString *)subtitleTrack;
 
 // Wheeels: this is called from Controls.gd via OSIPhone::set_mouse_mode to hide+lock the mouse pointer while in-game
-- (void)setPointerLocked: (BOOL)isLocked;
+- (void)setPointerLocked:(BOOL)isLocked;
+
+// Wheeels: show/hide virtual keyboard to make iOS's standard keyboard visible
+- (void)setVirtualKeyboardEnabled:(BOOL)isEnabled;
+
+//- (void)observeKeyboard;
+
+//- (void)unobserveKeyboard;
 
 @end

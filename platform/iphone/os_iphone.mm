@@ -395,12 +395,12 @@ bool OSIPhone::is_mouse_grab_enabled() const {
 void OSIPhone::set_mouse_mode(MouseMode p_mode) {
     if (@available(iOS 14.0, *)) {
 		//NSLog(@"OSIPhone::set_mouse_mode: %i -> %i", mouse_mode, p_mode);
-		if (p_mode == OS::MouseMode::MOUSE_MODE_VISIBLE) {
-			mouse_mode = OS::MouseMode::MOUSE_MODE_VISIBLE;
-			[AppDelegate.viewController setPointerLocked: NO];
-		} else {
+		if (p_mode == OS::MouseMode::MOUSE_MODE_CAPTURED) {
 			mouse_mode = OS::MouseMode::MOUSE_MODE_CAPTURED;
 			[AppDelegate.viewController setPointerLocked: YES];
+		} else {
+			mouse_mode = OS::MouseMode::MOUSE_MODE_VISIBLE;
+			[AppDelegate.viewController setPointerLocked: NO];
 		}
 	}
 }
@@ -508,20 +508,16 @@ bool OSIPhone::has_virtual_keyboard() const {
 };
 
 void OSIPhone::show_virtual_keyboard(const String &p_existing_text, const Rect2 &p_screen_rect, bool p_multiline, int p_max_input_length, int p_cursor_start, int p_cursor_end) {
-	// Wheeels: we don't want this messing with our own (fragile) KeyWatcher
-	/*
-	NSString *existingString = [[NSString alloc] initWithUTF8String:p_existing_text.utf8().get_data()];
-
-	[AppDelegate.viewController.keyboardView
-			becomeFirstResponderWithString:existingString
-								 multiline:p_multiline
-							   cursorStart:p_cursor_start
-								 cursorEnd:p_cursor_end];
-	*/
+	//if (p_multiline) {
+		[AppDelegate.viewController setVirtualKeyboardEnabled: YES];
+	//} else {
+	//	[AppDelegate.viewController observeKeyboard];
+	//}
 };
 
 void OSIPhone::hide_virtual_keyboard() {
-	//[AppDelegate.viewController.keyboardView resignFirstResponder];
+	//[AppDelegate.viewController unobserveKeyboard];
+	[AppDelegate.viewController setVirtualKeyboardEnabled: NO];
 }
 
 void OSIPhone::set_virtual_keyboard_height(int p_height) {
